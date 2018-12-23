@@ -1,13 +1,17 @@
 package me.calebbassham.stats.api;
 
 import org.bukkit.Material;
-import org.bukkit.TreeType;
 import org.bukkit.entity.EntityType;
-import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.meta.Damageable;
 
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.UUID;
 
 public class Game {
@@ -128,6 +132,97 @@ public class Game {
         stmt.executeUpdate();
 
         stmt.close();
+        conn.close();
+    }
+
+    public void snapshotPlayerInventory(PlayerInventory inv) throws SQLException {
+        var player = inv.getHolder().getUniqueId();
+
+        // Slot
+        var items = new HashMap<Integer, ItemStack>();
+        for (var slot = 0; slot < 40; slot++) {
+            var item = inv.getItem(slot);
+            if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) continue;
+            items.put(slot, item);
+        }
+
+        var conn = Stats.getConnection();
+        var itemStmt = conn.prepareStatement("INSERT INTO item (type, amount, durability) VALUES (?, ?, ?)");
+
+        for (var slot : items.keySet()) {
+            var item = items.get(slot);
+            itemStmt.setString(1, item.getType().name());
+            itemStmt.setInt(2, item.getAmount());
+
+            var meta = item.getItemMeta();
+            if (meta instanceof Damageable) {
+                var damageable = (Damageable) meta;
+                itemStmt.setInt(3, damageable.getDamage());
+            } else {
+                itemStmt.setNull(3, Types.INTEGER);
+            }
+
+            itemStmt.addBatch();
+            itemStmt.clearParameters();
+        }
+
+        var numberOfItems = itemStmt.executeBatch();
+        itemStmt.close();
+
+        var getItemsStmt = conn.prepareStatement("SELECT id FROM item ORDER BY id DESC LIMIT ?");
+        getItemsStmt.setInt(1, numberOfItems.length);
+        var itemsRs = getItemsStmt.executeQuery();
+
+        var enchantmentStmt = conn.prepareStatement("INSERT INTO enchantment (item_id, enchantment, enchantment_level) VALUES (?, ?, ?)");
+        while (itemsRs.next()) {
+            var itemId = itemsRs.getInt("item_id");
+            var item = new ArrayList<>(items.values()).get(itemsRs.getRow() - 1);
+
+            for (var enchantment : item.getEnchantments().keySet()) {
+                var level = item.getEnchantmentLevel(enchantment);
+                enchantmentStmt.setInt(1, itemId);
+                enchantmentStmt.setString(2, enchantment.getName());
+                enchantmentStmt.setInt(3, level);
+                enchantmentStmt.addBatch();
+                enchantmentStmt.clearParameters();
+            }
+        }
+
+        enchantmentStmt.executeBatch();
+        enchantmentStmt.close();
+
+        var invStmt = conn.prepareStatement("INSERT INTO inventory (player_id, game_id, time_created) VALUES (?, ?, ?)");
+        invStmt.setString(1, player.toString());
+        invStmt.setInt(2, id);
+        invStmt.setTimestamp(3, Timestamp.from(Instant.now()));
+        invStmt.executeUpdate();
+        invStmt.close();
+
+        var getInvStmt = conn.prepareStatement("SELECT id FROM inventory ORDER BY id DESC LIMIT 1");
+        var invRs = getInvStmt.executeQuery();
+        invRs.next();
+        var invId = invRs.getInt("id");
+        invRs.close();
+
+        var invItemStmt = conn.prepareStatement("INSERT INTO inventory_item (inventory_id, item_id, slot) VALUES (?, ?, ?)");
+
+        itemsRs.beforeFirst();
+        while (itemsRs.next()) {
+            var itemId = itemsRs.getInt("id");
+            var slot = new ArrayList<>(items.keySet()).get(itemsRs.getRow() - 1);
+            invItemStmt.setInt(1, invId);
+            invItemStmt.setInt(2, itemId);
+            invItemStmt.setInt(3, slot);
+            invItemStmt.addBatch();
+            invItemStmt.clearParameters();
+        }
+
+        itemsRs.close();
+        getItemsStmt.close();
+
+        invItemStmt.executeBatch();
+        invItemStmt.close();
+
         conn.close();
     }
 
