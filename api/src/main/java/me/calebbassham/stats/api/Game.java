@@ -1,6 +1,9 @@
 package me.calebbassham.stats.api;
 
+import org.bukkit.Material;
+import org.bukkit.TreeType;
 import org.bukkit.entity.EntityType;
+import org.bukkit.event.block.BlockBreakEvent;
 
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -70,14 +73,10 @@ public class Game {
 
         var query = conn.prepareStatement("DELETE FROM game WHERE id = ?");
         query.setInt(1, id);
-        query.executeUpdate();
-        query.close();
 
-        query = conn.prepareStatement("DELETE FROM mob_kill WHERE game_id = ?");
-        query.setInt(1, id);
         query.executeUpdate();
-        query.close();
 
+        query.close();
         conn.close();
     }
 
@@ -112,6 +111,19 @@ public class Game {
         stmt.setInt(1, id);
         stmt.setString(2, uuid.toString());
         stmt.setString(3, entity.name());
+        stmt.setTimestamp(4, Timestamp.from(Instant.now()));
+        stmt.executeUpdate();
+
+        stmt.close();
+        conn.close();
+    }
+
+    public void playerBrokeBlock(UUID uuid, Material material) throws SQLException {
+        var conn = Stats.getConnection();
+        var stmt = conn.prepareStatement("INSERT INTO block_broken (game_id, player_id, block, time_broken) VALUES (?, ?, ?, ?)");
+        stmt.setInt(1, id);
+        stmt.setString(2, uuid.toString());
+        stmt.setString(3, material.name());
         stmt.setTimestamp(4, Timestamp.from(Instant.now()));
         stmt.executeUpdate();
 
