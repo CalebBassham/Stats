@@ -74,6 +74,10 @@ public class Game {
     }
 
     public void delete() throws SQLException {
+        delete(id);
+    }
+
+    public static void delete(int id) throws SQLException {
         var conn = Stats.getConnection();
 
         var query = conn.prepareStatement("DELETE FROM game WHERE id = ?");
