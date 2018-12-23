@@ -18,7 +18,7 @@ public class Stats {
         return dataSource;
     }
 
-    public static Connection getConnection() throws SQLException {
+    static Connection getConnection() throws SQLException {
         return dataSource.getConnection();
     }
 

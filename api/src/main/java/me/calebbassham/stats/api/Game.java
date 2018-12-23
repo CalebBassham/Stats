@@ -2,6 +2,7 @@ package me.calebbassham.stats.api;
 
 import org.bukkit.Material;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
@@ -223,6 +224,46 @@ public class Game {
         invItemStmt.executeBatch();
         invItemStmt.close();
 
+        conn.close();
+    }
+
+    public void snapshotPlayerLocation(UUID player, int x, int y, int z) throws SQLException {
+        var conn = Stats.getConnection();
+        var ps = conn.prepareCall("INSERT INTO location (game_id, player_id, time_created, x, y, z) VALUES (?, ?, ?, ?, ?, ?)");
+        ps.setInt(1, id);
+        ps.setString(2, player.toString());
+        ps.setTimestamp(3, Timestamp.from(Instant.now()));
+        ps.setInt(4, x);
+        ps.setInt(5, y);
+        ps.setInt(6, z);
+
+        ps.executeUpdate();
+
+        ps.close();
+        conn.close();
+    }
+
+    public void batchSnapshotPlayerLocation(Player[] players) throws SQLException {
+        var conn = Stats.getConnection();
+        var ps = conn.prepareCall("INSERT INTO location (game_id, player_id, time_created, x, y, z) VALUES (?, ?, ?, ?, ?, ?)");
+
+        for (var player : players) {
+            var location = player.getLocation();
+            ps.setInt(1, id);
+            ps.setString(2, player.getUniqueId().toString());
+            ps.setInt(1, id);
+            ps.setString(2, player.toString());
+            ps.setTimestamp(3, Timestamp.from(Instant.now()));
+            ps.setInt(4, location.getBlockX());
+            ps.setInt(5, location.getBlockY());
+            ps.setInt(6, location.getBlockZ());
+            ps.addBatch();
+            ps.clearParameters();
+        }
+
+        ps.executeBatch();
+
+        ps.close();
         conn.close();
     }
 
