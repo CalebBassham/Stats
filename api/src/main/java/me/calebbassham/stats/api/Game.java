@@ -79,10 +79,8 @@ public class Game {
 
     public static void delete(int id) throws SQLException {
         var conn = Stats.getConnection();
-
         var query = conn.prepareStatement("DELETE FROM game WHERE id = ?");
         query.setInt(1, id);
-
         query.executeUpdate();
 
         query.close();
@@ -268,6 +266,52 @@ public class Game {
         ps.executeBatch();
 
         ps.close();
+        conn.close();
+    }
+
+    public void playerCaughtFishingItem(UUID player, ItemStack item) throws SQLException {
+        var conn = Stats.getConnection();
+        var ps = conn.prepareStatement("INSERT INTO item (type, amount) VALUES (?, ?)");
+
+        ps.setString(1, item.getType().name());
+        ps.setInt(2, 1);
+
+        ps.executeUpdate();
+        ps.close();
+
+        ps = conn.prepareStatement("SELECT id FROM item ORDER BY id DESC LIMIT 1");
+        var rs = ps.executeQuery();
+
+        rs.next();
+        var itemId = rs.getInt(id);
+
+        rs.close();
+        ps.close();
+
+        if (item.getEnchantments().size() > 0) {
+            ps = conn.prepareStatement("INSERT INTO enchantment (item_id, enchantment, enchantment_level) VALUES (?, ?, ?)");
+
+            for (var enchantment : item.getEnchantments().keySet()) {
+                var level = item.getEnchantmentLevel(enchantment);
+                ps.setInt(1, itemId);
+                ps.setString(2, enchantment.getName());
+                ps.setInt(3, level);
+                ps.addBatch();
+                ps.clearParameters();
+            }
+
+            ps.executeBatch();
+            ps.close();
+        }
+
+        ps = conn.prepareStatement("INSERT INTO fishing_item_caught (game_id, item_id, time_caught) VALUES (?, ?, ?)");
+        ps.setInt(1, id);
+        ps.setInt(2, itemId);
+        ps.setTimestamp(3, Timestamp.from(Instant.now()));
+
+        ps.executeUpdate();
+        ps.close();
+
         conn.close();
     }
 
