@@ -1,8 +1,6 @@
 package me.calebbassham.stats.api;
 
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
-import org.bukkit.entity.Player;
 
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -110,10 +108,11 @@ public class Game {
 
     public void playerKilledMob(UUID uuid, EntityType entity) throws SQLException {
         var conn = Stats.getConnection();
-        var stmt = conn.prepareStatement("INSERT INTO mob_kill (game_id, player_id, mob) VALUES (?, ?, ?)");
+        var stmt = conn.prepareStatement("INSERT INTO mob_kill (game_id, player_id, mob, time_killed) VALUES (?, ?, ?, ?)");
         stmt.setInt(1, id);
         stmt.setString(2, uuid.toString());
         stmt.setString(3, entity.name());
+        stmt.setTimestamp(4, Timestamp.from(Instant.now()));
         stmt.executeUpdate();
 
         stmt.close();
