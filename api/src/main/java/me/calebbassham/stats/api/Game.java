@@ -1,6 +1,7 @@
 package me.calebbassham.stats.api;
 
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 
 import java.sql.SQLException;
@@ -68,20 +69,17 @@ public class Game {
 
     public void delete() throws SQLException {
         var conn = Stats.getConnection();
+
         var query = conn.prepareStatement("DELETE FROM game WHERE id = ?");
         query.setInt(1, id);
         query.executeUpdate();
-
         query.close();
-        conn.close();
-    }
 
-    public static void deleteLast() throws SQLException {
-        var conn = Stats.getConnection();
-        var query = conn.prepareStatement("DELETE FROM game ORDER BY id DESC LIMIT 1");
+        query = conn.prepareStatement("DELETE FROM mob_kill WHERE game_id = ?");
+        query.setInt(1, id);
         query.executeUpdate();
-
         query.close();
+
         conn.close();
     }
 
@@ -110,12 +108,16 @@ public class Game {
         return endTime;
     }
 
-    public void playerKilledMob(UUID uuid, Entity entity) {
-        // not player
-    }
+    public void playerKilledMob(UUID uuid, EntityType entity) throws SQLException {
+        var conn = Stats.getConnection();
+        var stmt = conn.prepareStatement("INSERT INTO mob_kill (game_id, player_id, mob) VALUES (?, ?, ?)");
+        stmt.setInt(1, id);
+        stmt.setString(2, uuid.toString());
+        stmt.setString(3, entity.name());
+        stmt.executeUpdate();
 
-    public void playerKilledMob(Player player, Entity entity) {
-        playerKilledMob(player.getUniqueId(), entity);
+        stmt.close();
+        conn.close();
     }
 
 }
