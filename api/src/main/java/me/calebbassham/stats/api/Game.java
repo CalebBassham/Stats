@@ -1,6 +1,8 @@
 package me.calebbassham.stats.api;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -315,4 +317,56 @@ public class Game {
         conn.close();
     }
 
+    public void playerKilledPlayer(Player killer, Player killed) throws SQLException {
+        var conn = Stats.getConnection();
+
+        snapshotPlayerInventory(killer.getInventory());
+        var ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
+        var rs = ps.executeQuery();
+        rs.first();
+        var killerInventoryId = rs.getInt(1);
+        rs.close();
+        ps.close();
+
+        snapshotPlayerInventory(killed.getInventory());
+        ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
+        rs = ps.executeQuery();
+        rs.first();
+        var killedInventoryId = rs.getInt(1);
+        rs.close();
+        ps.close();
+
+        snapshotPlayerLocation(killer.getUniqueId(), killer.getLocation().getBlockX(), killer.getLocation().getBlockY(), killer.getLocation().getBlockZ());
+        ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
+        rs = ps.executeQuery();
+        rs.first();
+        var killerLocationId = rs.getInt(1);
+        rs.close();
+        ps.close();
+
+        snapshotPlayerLocation(killed.getUniqueId(), killed.getLocation().getBlockX(), killed.getLocation().getBlockY(), killed.getLocation().getBlockZ());
+        ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
+        rs = ps.executeQuery();
+        rs.first();
+        var killedLocationId = rs.getInt(1);
+        rs.close();
+        ps.close();
+
+        ps = conn.prepareStatement("INSERT INTO player_kill (game_id, killed_player_id, killed_player_inventory_id, killed_player_location_id, killed_player_experience," +
+                "killer_player_id, killer_player_inventory_id, killer_player_location_id, killer_health_remaining, killer_max_health) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        ps.setInt(1, id);
+        ps.setString(2, killed.getUniqueId().toString());
+        ps.setInt(3, killedInventoryId);
+        ps.setInt(4, killedLocationId);
+        ps.setInt(5, killed.getTotalExperience());
+        ps.setString(6, killer.getUniqueId().toString());
+        ps.setInt(7, killerInventoryId);
+        ps.setInt(8, killerLocationId);
+        ps.setDouble(9, killer.getHealth());
+        ps.setDouble(10, killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+        ps.executeUpdate();
+        ps.close();
+
+        conn.close();
+    }
 }
