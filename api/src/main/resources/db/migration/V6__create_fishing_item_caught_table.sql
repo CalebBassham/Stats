@@ -5,6 +5,6 @@ CREATE TABLE fishing_item_caught
   item_id     BIGINT UNSIGNED NOT NULL,
   time_caught TIMESTAMP       NOT NULL,
   PRIMARY KEY (id),
-  FOREIGN KEY (game_id) REFERENCES game (id),
-  FOREIGN KEY (item_id) REFERENCES item (id)
+  FOREIGN KEY (game_id) REFERENCES game (id) ON DELETE CASCADE,
+  FOREIGN KEY (item_id) REFERENCES item (id) ON DELETE CASCADE
 )

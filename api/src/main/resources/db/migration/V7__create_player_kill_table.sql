@@ -15,8 +15,8 @@ CREATE TABLE player_kill (
 
   PRIMARY KEY (id),
   FOREIGN KEY (game_id) REFERENCES game (id) ON DELETE CASCADE,
-  FOREIGN KEY (killed_player_location_id) REFERENCES location (id),
-  FOREIGN KEY (killed_player_inventory_id) REFERENCES inventory (id),
-  FOREIGN KEY (killer_player_location_id) REFERENCES location (id),
-  FOREIGN KEY (killer_player_inventory_id) REFERENCES inventory (id)
+  FOREIGN KEY (killed_player_location_id) REFERENCES location (id) ON DELETE CASCADE
+  FOREIGN KEY (killed_player_inventory_id) REFERENCES inventory (id) ON DELETE CASCADE,
+  FOREIGN KEY (killer_player_location_id) REFERENCES location (id) ON DELETE CASCADE,
+  FOREIGN KEY (killer_player_inventory_id) REFERENCES inventory (id) ON DELETE CASCADE
 );
