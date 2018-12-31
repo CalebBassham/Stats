@@ -369,4 +369,36 @@ public class Game {
 
         conn.close();
     }
+
+    public void playerStarted(UUID player) throws SQLException {
+        var conn = Stats.getConnection();
+        var ps = conn.prepareStatement("INSERT INTO game_player game_id, player_id, time_started VALUES (?, ?, ?)");
+        ps.setInt(1, id);
+        ps.setString(2, player.toString());
+        ps.setTimestamp(3, Timestamp.from(Instant.now()));
+        ps.executeUpdate();
+
+        ps.close();
+        conn.close();
+    }
+
+    public void playersStarted(UUID[] players) throws SQLException {
+        var conn = Stats.getConnection();
+        var ps = conn.prepareStatement("INSERT INTO game_player game_id, player_id, time_started VALUES (?, ?, ?)");
+
+        ps.setTimestamp(3, Timestamp.from(Instant.now()));
+
+        for(var player : players) {
+            ps.setInt(1, id);
+            ps.setString(2, player.toString());
+
+            ps.addBatch();
+        }
+
+        ps.executeBatch();
+
+        ps.close();
+        conn.close();
+    }
+
 }
