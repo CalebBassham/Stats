@@ -401,4 +401,15 @@ public class Game {
         conn.close();
     }
 
+    public void playerEnchantedItem(UUID player) throws SQLException {
+        var conn = Stats.getConnection();
+        var ps = conn.prepareStatement("UPDATE game_player SET items_enchanted = items_enchanted + 1 WHERE game_id = ? AND player_id = ?");
+
+        ps.setInt(1, id);
+        ps.setString(2, player.toString());
+
+        ps.close();
+        conn.close();
+    }
+
 }
