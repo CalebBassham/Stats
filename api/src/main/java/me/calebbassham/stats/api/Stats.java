@@ -24,6 +24,7 @@ public class Stats {
 
     public static void setupDatabase() {
         var flyway = Flyway.configure()
+                .table("stats_schema_history")
                 .dataSource(dataSource).load();
         flyway.migrate();
     }
