@@ -1,15 +1,16 @@
 package me.calebbassham.stats.api;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.event.entity.EntityTameEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
+import org.junit.Ignore;
 
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.UUID;
 
+@SuppressWarnings("unused")
 public class Game {
 
     private int id;
@@ -474,4 +476,107 @@ public class Game {
         conn.close();
     }
 
+    public void playerDamageTaken(UUID damagedPlayer, EntityDamageEvent.DamageCause damageCause, double damageTaken, double damagedPlayerHealth, double damagedPlayerMaxHealth) throws SQLException {
+        if (damageTaken <= 0) return;
+        var conn = Stats.getConnection();
+        var ps = conn.prepareStatement("INSERT INTO damage_taken (game_id, time_taken, damage_cause, damage_taken, damaged_player_id, damaged_player_health, damaged_player_max_health) VALUES (?, ?, ?, ?, ?, ?, ?)");
+
+        ps.setInt(1, id);
+        ps.setTimestamp(2, Timestamp.from(Instant.now()));
+        ps.setString(3, damageCause.name());
+        ps.setDouble(4, damageTaken);
+        ps.setString(5, damagedPlayer.toString());
+        ps.setDouble(6, damagedPlayerHealth);
+        ps.setDouble(7, damagedPlayerMaxHealth);
+
+        ps.executeUpdate();
+
+        ps.close();
+        conn.close();
+    }
+
+    public void playerDamageTaken(UUID damagedPlayer, EntityDamageEvent.DamageCause damageCause, double damageTaken, double damagedPlayerHealth, double damagedPlayerMaxHealth, EntityType damagingEntity, double damagingEntityHealth, double damagingEntityMaxHealth) throws SQLException {
+        if (damageTaken <= 0) return;
+        var conn = Stats.getConnection();
+        var ps = conn.prepareStatement("INSERT INTO damage_taken (game_id, time_taken, damage_cause, damage_taken, damaged_player_id, damaged_player_health, damaged_player_max_health, damaging_mob, damaging_mob_health, damaging_mob_max_health) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        ps.setInt(1, id);
+        ps.setTimestamp(2, Timestamp.from(Instant.now()));
+        ps.setString(3, damageCause.name());
+        ps.setString(5, damagedPlayer.toString());
+        ps.setDouble(6, damagedPlayerHealth);
+        ps.setDouble(7, damagedPlayerMaxHealth);
+        ps.setString(8, damagingEntity.name());
+        ps.setDouble(9, damagingEntityHealth);
+        ps.setDouble(10, damagingEntityMaxHealth);
+
+        ps.executeUpdate();
+
+        ps.close();
+        conn.close();
+    }
+
+    public void playerDamageTaken(UUID damagedPlayer, EntityDamageEvent.DamageCause damageCause, double damageTaken, double damagedPlayerHealth, double damagedPlayerMaxHealth, UUID damagingPlayer, double damagingPlayerHealth, double damagingPlayerMaxHealth) throws SQLException {
+        if (damageTaken <= 0) return;
+        var conn = Stats.getConnection();
+        var ps = conn.prepareStatement("INSERT INTO damage_taken (game_id, time_taken, damage_cause, damage_taken, damaged_player_id, damaged_player_health, damaged_player_max_health, damaging_mob, damaging_mob_health, damaging_mob_max_health, damaging_player_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        ps.setInt(1, id);
+        ps.setTimestamp(2, Timestamp.from(Instant.now()));
+        ps.setString(3, damageCause.name());
+        ps.setDouble(4, damageTaken);
+        ps.setString(5, damagedPlayer.toString());
+        ps.setDouble(6, damagedPlayerHealth);
+        ps.setDouble(7, damagedPlayerMaxHealth);
+        ps.setString(8, EntityType.PLAYER.name());
+        ps.setDouble(9, damagingPlayerHealth);
+        ps.setDouble(10, damagingPlayerMaxHealth);
+        ps.setString(11, damagingPlayer.toString());
+
+        ps.executeUpdate();
+
+        ps.close();
+        conn.close();
+    }
+
+    public void playerDamageTaken(EntityDamageEvent e) throws IllegalArgumentException, SQLException {
+        var damagedEntity = e.getEntity();
+        if (!(damagedEntity instanceof Player)) {
+            throw new IllegalArgumentException("The entity must be a player.");
+        }
+        var damagedPlayer = (Player) damagedEntity;
+
+        playerDamageTaken(damagedPlayer.getUniqueId(), e.getCause(), e.getFinalDamage(), damagedPlayer.getHealth(), damagedPlayer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+    }
+
+    public void playerDamageTaken(EntityDamageByEntityEvent e) throws SQLException {
+        var damagedEntity = e.getEntity();
+        if (!(damagedEntity instanceof Player)) {
+            throw new IllegalArgumentException("The entity must be a player.");
+        }
+        var damagedPlayer = (Player) damagedEntity;
+
+        var damagingEntity = e.getEntity();
+        double damagingEntityHealth = 0;
+        double damagingEntityMaxHealth = 0;
+        if (damagingEntity instanceof LivingEntity) {
+            var livingDamagingEntity = (LivingEntity) damagingEntity;
+            damagingEntityHealth = livingDamagingEntity.getHealth();
+            damagingEntityMaxHealth = livingDamagingEntity.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue();
+        }
+
+        UUID damagingPlayerId = null;
+        if (damagingEntity instanceof Player) {
+            var damagingPlayer = (Player) damagingEntity;
+            damagingPlayerId = damagingPlayer.getUniqueId();
+        }
+
+
+        if (damagingPlayerId == null) {
+            playerDamageTaken(damagedPlayer.getUniqueId(), e.getCause(), e.getFinalDamage(), damagedPlayer.getHealth(), damagedPlayer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue(), damagingEntity.getType(), damagingEntityHealth, damagingEntityMaxHealth);
+        } else {
+            playerDamageTaken(damagedPlayer.getUniqueId(), e.getCause(), e.getFinalDamage(), damagedPlayer.getHealth(), damagedPlayer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue(), damagingPlayerId, damagingEntityHealth, damagingEntityMaxHealth);
+        }
+
+    }
 }
