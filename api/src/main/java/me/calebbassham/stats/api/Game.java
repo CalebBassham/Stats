@@ -1,6 +1,7 @@
 package me.calebbassham.stats.api;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.EntityType;
@@ -436,6 +437,21 @@ public class Game {
         }
 
         ps.executeBatch();
+
+        ps.close();
+        conn.close();
+    }
+
+    public void playerShotBow(UUID player, boolean hit, double distance) throws SQLException {
+        var conn = Stats.getConnection();
+        var ps = conn.prepareStatement("INSERT INTO bow_shot (game_id, player_id, hit, distance)");
+
+        ps.setInt(1, id);
+        ps.setString(2, player.toString());
+        ps.setBoolean(3, hit);
+        ps.setDouble(4, distance);
+
+        ps.executeUpdate();
 
         ps.close();
         conn.close();
