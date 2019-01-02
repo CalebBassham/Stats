@@ -10,7 +10,15 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>plugin</artifactId>
+    <artifactId>stats-plugin</artifactId>
+
+    <distributionManagement>
+        <repository>
+            <id>aws-snapshot</id>
+            <name>AWS Snapshot Repository</name>
+            <url>s3://caleb-maven</url>
+        </repository>
+    </distributionManagement>
 
     <repositories>
         <repository>
@@ -77,6 +85,14 @@
                 </configuration>
             </plugin>
         </plugins>
+
+        <extensions>
+            <extension>
+                <groupId>org.springframework.build</groupId>
+                <artifactId>aws-maven</artifactId>
+                <version>5.0.0.RELEASE</version>
+            </extension>
+        </extensions>
     </build>
 
 </project>
