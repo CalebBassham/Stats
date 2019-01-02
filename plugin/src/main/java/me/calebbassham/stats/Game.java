@@ -1,4 +1,4 @@
-package me.calebbassham.stats.api;
+package me.calebbassham.stats;
 
 import org.bukkit.Material;
 import org.bukkit.attribute.Attribute;
@@ -11,7 +11,6 @@ import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
-import org.junit.Ignore;
 
 import java.sql.SQLException;
 import java.sql.Timestamp;

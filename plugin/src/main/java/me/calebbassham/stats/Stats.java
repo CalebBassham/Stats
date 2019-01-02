@@ -1,4 +1,4 @@
-package me.calebbassham.stats.api;
+package me.calebbassham.stats;
 
 import org.apache.commons.dbcp.BasicDataSource;
 import org.flywaydb.core.Flyway;
