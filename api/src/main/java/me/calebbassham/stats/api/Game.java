@@ -7,6 +7,7 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
@@ -31,6 +32,10 @@ public class Game {
         this.id = id;
         this.startTime = startTime;
         this.endTime = endTime;
+    }
+
+    private static Timestamp now() {
+        return Timestamp.from(Instant.now());
     }
 
     public static Game create() throws SQLException {
@@ -571,12 +576,34 @@ public class Game {
             damagingPlayerId = damagingPlayer.getUniqueId();
         }
 
-
         if (damagingPlayerId == null) {
             playerDamageTaken(damagedPlayer.getUniqueId(), e.getCause(), e.getFinalDamage(), damagedPlayer.getHealth(), damagedPlayer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue(), damagingEntity.getType(), damagingEntityHealth, damagingEntityMaxHealth);
         } else {
             playerDamageTaken(damagedPlayer.getUniqueId(), e.getCause(), e.getFinalDamage(), damagedPlayer.getHealth(), damagedPlayer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue(), damagingPlayerId, damagingEntityHealth, damagingEntityMaxHealth);
         }
 
+    }
+
+    public void playerConsumeItem(UUID player, String itemMaterial) throws SQLException {
+        var conn = Stats.getConnection();
+        var ps = conn.prepareStatement("INSERT INTO item_consume (game_id, player_id, time_consumed, item) VALUES (?, ?, ?, ?)");
+
+        ps.setInt(1, id);
+        ps.setString(2, player.toString());
+        ps.setTimestamp(3, now());
+        ps.setString(4, itemMaterial);
+
+        ps.executeUpdate();
+
+        ps.close();
+        conn.close();
+    }
+
+    public void playerConsumeItem(UUID player, Material item) throws SQLException {
+        playerConsumeItem(player, item.name());
+    }
+
+    public void playerConsumeItem(PlayerItemConsumeEvent e) throws SQLException {
+        playerConsumeItem(e.getPlayer().getUniqueId(), e.getItem().getType());
     }
 }
