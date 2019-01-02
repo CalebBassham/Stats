@@ -6,6 +6,7 @@ import org.bukkit.Material;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
+import org.bukkit.event.entity.EntityTameEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
@@ -444,12 +445,28 @@ public class Game {
 
     public void playerShotBow(UUID player, boolean hit, double distance) throws SQLException {
         var conn = Stats.getConnection();
-        var ps = conn.prepareStatement("INSERT INTO bow_shot (game_id, player_id, hit, distance)");
+        var ps = conn.prepareStatement("INSERT INTO bow_shot (game_id, player_id, hit, distance, time_shot) VALUES (?, ?, ?, ?, ?)");
 
         ps.setInt(1, id);
         ps.setString(2, player.toString());
         ps.setBoolean(3, hit);
         ps.setDouble(4, distance);
+        ps.setTimestamp(5, Timestamp.from(Instant.now()));
+
+        ps.executeUpdate();
+
+        ps.close();
+        conn.close();
+    }
+
+    public void playerTamedEntity(UUID player, EntityType mob) throws SQLException {
+        var conn = Stats.getConnection();
+        var ps = conn.prepareStatement("INSERT INTO mob_tamed (game_id, player_id, mob, time_tamed) VALUES (?, ?, ?, ?)");
+
+        ps.setInt(1, id);
+        ps.setString(2, player.toString());
+        ps.setString(3, mob.name());
+        ps.setTimestamp(4, Timestamp.from(Instant.now()));
 
         ps.executeUpdate();
 
