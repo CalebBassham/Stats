@@ -2,3 +2,4 @@ name: Stats
 version: 1.0
 author: Caleb Bassham
 main: me.calebbassham.stats.StatsPlugin
+api-version: 1.13

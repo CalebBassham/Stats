@@ -1,7 +1,0 @@
-CREATE TABLE game_winner (
-    id INT UNSIGNED NOT NULL,
-    game_id INT UNSIGNED NOT NULL,
-    player_id VARCHAR(36) NOT NULL,
-    PRIMARY KEY(id),
-    FOREIGN KEY (game_id) REFERENCES game (id) ON DELETE CASCADE
-)

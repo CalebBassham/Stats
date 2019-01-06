@@ -1,17 +1,14 @@
 package me.calebbassham.stats;
 
+import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.EntityType;
-import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
 
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
@@ -41,21 +38,21 @@ public class Game {
         var conn = Stats.getConnection();
 
         var update = conn.prepareStatement("INSERT INTO game (start_time) VALUES (?)");
-        update.setTimestamp(1, Timestamp.from(Instant.now()));
+        final var startTime = now();
+        update.setTimestamp(1, startTime);
         update.executeUpdate();
         update.close();
 
-        var query = conn.prepareStatement("SELECT * FROM game ORDER BY id DESC LIMIT 1");
+        var query = conn.prepareStatement("SELECT LAST_INSERT_ID()");
         var rs = query.executeQuery();
-        rs.next();
-        var id = rs.getInt("id");
-        var startTime = rs.getTimestamp("start_time").toInstant();
+        rs.first();
+        var id = rs.getInt(1);
         rs.close();
         query.close();
 
         conn.close();
 
-        return new Game(id, startTime, null);
+        return new Game(id, startTime.toInstant(), null);
     }
 
     public static Game load(int id) throws SQLException {
@@ -128,39 +125,91 @@ public class Game {
         stmt.setInt(1, id);
         stmt.setString(2, uuid.toString());
         stmt.setString(3, entity.name());
-        stmt.setTimestamp(4, Timestamp.from(Instant.now()));
+        stmt.setTimestamp(4, now());
         stmt.executeUpdate();
 
         stmt.close();
         conn.close();
     }
 
-    public void playerBrokeBlock(UUID uuid, Material material) throws SQLException {
+    public void playerBrokeBlock(UUID player, String material) throws SQLException {
         var conn = Stats.getConnection();
         var stmt = conn.prepareStatement("INSERT INTO block_broken (game_id, player_id, block, time_broken) VALUES (?, ?, ?, ?)");
         stmt.setInt(1, id);
-        stmt.setString(2, uuid.toString());
-        stmt.setString(3, material.name());
-        stmt.setTimestamp(4, Timestamp.from(Instant.now()));
+        stmt.setString(2, player.toString());
+        stmt.setString(3, material);
+        stmt.setTimestamp(4, now());
         stmt.executeUpdate();
 
         stmt.close();
         conn.close();
     }
 
-    public void snapshotPlayerInventory(PlayerInventory inv) throws SQLException {
-        var player = inv.getHolder().getUniqueId();
+    public void playerBrokeBlock(UUID player, Material material) throws SQLException {
+        playerBrokeBlock(player, material.name());
+    }
 
-        // Slot
-        var items = new HashMap<Integer, ItemStack>();
-        for (var slot = 0; slot < 40; slot++) {
-            var item = inv.getItem(slot);
-            if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) continue;
-            items.put(slot, item);
+    private int saveItem(Connection conn, ItemStack item) throws SQLException {
+        var ps = conn.prepareStatement("INSERT INTO item (type, amount, damage, name, lore) VALUES (?, ?, ?, ?, ?)");
+
+        ps.setString(1, item.getType().name());
+        ps.setInt(2, item.getAmount());
+
+        var meta = item.getItemMeta();
+        if (meta instanceof Damageable) {
+            var damageable = (Damageable) meta;
+            if (damageable.hasDamage()) {
+                ps.setInt(3, damageable.getDamage());
+            } else {
+                ps.setNull(3, Types.INTEGER);
+            }
+        } else {
+            ps.setNull(3, Types.INTEGER);
         }
 
-        var conn = Stats.getConnection();
-        var itemStmt = conn.prepareStatement("INSERT INTO item (type, amount, durability) VALUES (?, ?, ?)");
+        if (meta.hasDisplayName()) {
+            ps.setString(4, meta.getDisplayName());
+        } else {
+            ps.setNull(4, Types.VARCHAR);
+        }
+
+        if (meta.hasLore()) {
+            ps.setString(5, String.join("\n", meta.getLore()));
+        } else {
+            ps.setNull(5, Types.VARCHAR);
+        }
+
+        ps.executeUpdate();
+        ps.close();
+
+        ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
+        var rs = ps.executeQuery();
+        rs.first();
+        var itemId = rs.getInt(1);
+        rs.close();
+        ps.close();
+
+        if (item.getEnchantments().size() > 0) {
+            ps = conn.prepareStatement("INSERT INTO enchantment (item_id, enchantment, enchantment_level) VALUES (?, ?, ?)");
+
+            for (var enchantment : item.getEnchantments().keySet()) {
+                var level = item.getEnchantmentLevel(enchantment);
+                ps.setInt(1, itemId);
+                ps.setString(2, enchantment.getName());
+                ps.setInt(3, level);
+                ps.addBatch();
+                ps.clearParameters();
+            }
+
+            ps.executeBatch();
+            ps.close();
+        }
+
+        return itemId;
+    }
+
+    public int snapshotPlayerInventory(Connection conn, UUID player, HashMap<Integer, ItemStack> items) throws SQLException {
+        var itemStmt = conn.prepareStatement("INSERT INTO item (type, amount, damage, name, lore) VALUES (?, ?, ?, ?, ?)");
 
         for (var slot : items.keySet()) {
             var item = items.get(slot);
@@ -170,9 +219,25 @@ public class Game {
             var meta = item.getItemMeta();
             if (meta instanceof Damageable) {
                 var damageable = (Damageable) meta;
-                itemStmt.setInt(3, damageable.getDamage());
+                if (damageable.hasDamage()) {
+                    itemStmt.setInt(3, damageable.getDamage());
+                } else {
+                    itemStmt.setNull(3, Types.INTEGER);
+                }
             } else {
                 itemStmt.setNull(3, Types.INTEGER);
+            }
+
+            if (meta.hasDisplayName()) {
+                itemStmt.setString(4, meta.getDisplayName());
+            } else {
+                itemStmt.setNull(4, Types.VARCHAR);
+            }
+
+            if (meta.hasLore()) {
+                itemStmt.setString(5, String.join("\n", meta.getLore()));
+            } else {
+                itemStmt.setNull(5, Types.VARCHAR);
             }
 
             itemStmt.addBatch();
@@ -188,7 +253,7 @@ public class Game {
 
         var enchantmentStmt = conn.prepareStatement("INSERT INTO enchantment (item_id, enchantment, enchantment_level) VALUES (?, ?, ?)");
         while (itemsRs.next()) {
-            var itemId = itemsRs.getInt("item_id");
+            var itemId = itemsRs.getInt("id");
             var item = new ArrayList<>(items.values()).get(itemsRs.getRow() - 1);
 
             for (var enchantment : item.getEnchantments().keySet()) {
@@ -207,14 +272,14 @@ public class Game {
         var invStmt = conn.prepareStatement("INSERT INTO inventory (player_id, game_id, time_created) VALUES (?, ?, ?)");
         invStmt.setString(1, player.toString());
         invStmt.setInt(2, id);
-        invStmt.setTimestamp(3, Timestamp.from(Instant.now()));
+        invStmt.setTimestamp(3, now());
         invStmt.executeUpdate();
         invStmt.close();
 
-        var getInvStmt = conn.prepareStatement("SELECT id FROM inventory ORDER BY id DESC LIMIT 1");
+        var getInvStmt = conn.prepareStatement("SELECT LAST_INSERT_ID()");
         var invRs = getInvStmt.executeQuery();
-        invRs.next();
-        var invId = invRs.getInt("id");
+        invRs.first();
+        var invId = invRs.getInt(1);
         invRs.close();
 
         var invItemStmt = conn.prepareStatement("INSERT INTO inventory_item (inventory_id, item_id, slot) VALUES (?, ?, ?)");
@@ -236,28 +301,48 @@ public class Game {
         invItemStmt.executeBatch();
         invItemStmt.close();
 
-        conn.close();
+        return invId;
     }
 
-    public void snapshotPlayerLocation(UUID player, int x, int y, int z) throws SQLException {
+    public int snapshotPlayerInventory(UUID player, HashMap<Integer, ItemStack> items) throws SQLException {
         var conn = Stats.getConnection();
-        var ps = conn.prepareCall("INSERT INTO location (game_id, player_id, time_created, x, y, z) VALUES (?, ?, ?, ?, ?, ?)");
+        var id = snapshotPlayerInventory(Stats.getConnection(), player, items);
+        conn.close();
+        return id;
+    }
+
+    public int snapshotPlayerLocation(Connection conn, UUID player, int x, int y, int z) throws SQLException {
+        var ps = conn.prepareStatement("INSERT INTO location (game_id, player_id, time_created, x, y, z) VALUES (?, ?, ?, ?, ?, ?)");
         ps.setInt(1, id);
         ps.setString(2, player.toString());
-        ps.setTimestamp(3, Timestamp.from(Instant.now()));
+        ps.setTimestamp(3, now());
         ps.setInt(4, x);
         ps.setInt(5, y);
         ps.setInt(6, z);
 
         ps.executeUpdate();
+        ps.close();
+
+        ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
+        var rs = ps.executeQuery();
+        rs.first();
+        var id = rs.getInt(1);
+        rs.close();
 
         ps.close();
+        return id;
+    }
+
+    public int snapshotPlayerLocation(UUID player, int x, int y, int z) throws SQLException {
+        var conn = Stats.getConnection();
+        var id = snapshotPlayerLocation(Stats.getConnection(), player, x, y, z);
         conn.close();
+        return id;
     }
 
     public void batchSnapshotPlayerLocation(Player[] players) throws SQLException {
         var conn = Stats.getConnection();
-        var ps = conn.prepareCall("INSERT INTO location (game_id, player_id, time_created, x, y, z) VALUES (?, ?, ?, ?, ?, ?)");
+        var ps = conn.prepareStatement("INSERT INTO location (game_id, player_id, time_created, x, y, z) VALUES (?, ?, ?, ?, ?, ?)");
 
         for (var player : players) {
             var location = player.getLocation();
@@ -265,7 +350,7 @@ public class Game {
             ps.setString(2, player.getUniqueId().toString());
             ps.setInt(1, id);
             ps.setString(2, player.toString());
-            ps.setTimestamp(3, Timestamp.from(Instant.now()));
+            ps.setTimestamp(3, now());
             ps.setInt(4, location.getBlockX());
             ps.setInt(5, location.getBlockY());
             ps.setInt(6, location.getBlockZ());
@@ -281,43 +366,13 @@ public class Game {
 
     public void playerCaughtFishingItem(UUID player, ItemStack item) throws SQLException {
         var conn = Stats.getConnection();
-        var ps = conn.prepareStatement("INSERT INTO item (type, amount) VALUES (?, ?)");
 
-        ps.setString(1, item.getType().name());
-        ps.setInt(2, 1);
+        var itemId = saveItem(conn, item);
 
-        ps.executeUpdate();
-        ps.close();
-
-        ps = conn.prepareStatement("SELECT id FROM item ORDER BY id DESC LIMIT 1");
-        var rs = ps.executeQuery();
-
-        rs.next();
-        var itemId = rs.getInt(id);
-
-        rs.close();
-        ps.close();
-
-        if (item.getEnchantments().size() > 0) {
-            ps = conn.prepareStatement("INSERT INTO enchantment (item_id, enchantment, enchantment_level) VALUES (?, ?, ?)");
-
-            for (var enchantment : item.getEnchantments().keySet()) {
-                var level = item.getEnchantmentLevel(enchantment);
-                ps.setInt(1, itemId);
-                ps.setString(2, enchantment.getName());
-                ps.setInt(3, level);
-                ps.addBatch();
-                ps.clearParameters();
-            }
-
-            ps.executeBatch();
-            ps.close();
-        }
-
-        ps = conn.prepareStatement("INSERT INTO fishing_item_caught (game_id, item_id, time_caught) VALUES (?, ?, ?)");
+        var ps = conn.prepareStatement("INSERT INTO fishing_item_caught (game_id, item_id, time_caught) VALUES (?, ?, ?)");
         ps.setInt(1, id);
         ps.setInt(2, itemId);
-        ps.setTimestamp(3, Timestamp.from(Instant.now()));
+        ps.setTimestamp(3, now());
 
         ps.executeUpdate();
         ps.close();
@@ -325,53 +380,27 @@ public class Game {
         conn.close();
     }
 
-    public void playerKilledPlayer(Player killer, Player killed) throws SQLException {
+    public void playerKilledPlayer(UUID killer, HashMap<Integer, ItemStack> killerItems, Location killerLocation, double killerHealth, double killerMaxHealth, UUID killed, HashMap<Integer, ItemStack> killedItems, Location killedLocation, int killedTotalExperience) throws SQLException {
         var conn = Stats.getConnection();
 
-        snapshotPlayerInventory(killer.getInventory());
-        var ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
-        var rs = ps.executeQuery();
-        rs.first();
-        var killerInventoryId = rs.getInt(1);
-        rs.close();
-        ps.close();
+        var killerInventoryId = snapshotPlayerInventory(conn, killer, killerItems);
+        var killedInventoryId = snapshotPlayerInventory(conn, killed, killedItems);
 
-        snapshotPlayerInventory(killed.getInventory());
-        ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
-        rs = ps.executeQuery();
-        rs.first();
-        var killedInventoryId = rs.getInt(1);
-        rs.close();
-        ps.close();
+        var killerLocationId = snapshotPlayerLocation(conn, killer, killerLocation.getBlockX(), killerLocation.getBlockY(), killerLocation.getBlockZ());
+        var killedLocationId = snapshotPlayerLocation(conn, killed, killedLocation.getBlockX(), killedLocation.getBlockY(), killedLocation.getBlockZ());
 
-        snapshotPlayerLocation(killer.getUniqueId(), killer.getLocation().getBlockX(), killer.getLocation().getBlockY(), killer.getLocation().getBlockZ());
-        ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
-        rs = ps.executeQuery();
-        rs.first();
-        var killerLocationId = rs.getInt(1);
-        rs.close();
-        ps.close();
-
-        snapshotPlayerLocation(killed.getUniqueId(), killed.getLocation().getBlockX(), killed.getLocation().getBlockY(), killed.getLocation().getBlockZ());
-        ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
-        rs = ps.executeQuery();
-        rs.first();
-        var killedLocationId = rs.getInt(1);
-        rs.close();
-        ps.close();
-
-        ps = conn.prepareStatement("INSERT INTO player_kill (game_id, killed_player_id, killed_player_inventory_id, killed_player_location_id, killed_player_experience," +
+        var ps = conn.prepareStatement("INSERT INTO player_kill (game_id, killed_player_id, killed_player_inventory_id, killed_player_location_id, killed_player_experience," +
                 "killer_player_id, killer_player_inventory_id, killer_player_location_id, killer_health_remaining, killer_max_health) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         ps.setInt(1, id);
-        ps.setString(2, killed.getUniqueId().toString());
+        ps.setString(2, killed.toString());
         ps.setInt(3, killedInventoryId);
         ps.setInt(4, killedLocationId);
-        ps.setInt(5, killed.getTotalExperience());
-        ps.setString(6, killer.getUniqueId().toString());
+        ps.setInt(5, killedTotalExperience);
+        ps.setString(6, killer.toString());
         ps.setInt(7, killerInventoryId);
         ps.setInt(8, killerLocationId);
-        ps.setDouble(9, killer.getHealth());
-        ps.setDouble(10, killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+        ps.setDouble(9, killerHealth);
+        ps.setDouble(10, killerMaxHealth);
         ps.executeUpdate();
         ps.close();
 
@@ -383,7 +412,7 @@ public class Game {
         var ps = conn.prepareStatement("INSERT INTO game_player (game_id, player_id, time_started) VALUES (?, ?, ?)");
         ps.setInt(1, id);
         ps.setString(2, player.toString());
-        ps.setTimestamp(3, Timestamp.from(Instant.now()));
+        ps.setTimestamp(3, now());
         ps.executeUpdate();
 
         ps.close();
@@ -394,9 +423,9 @@ public class Game {
         var conn = Stats.getConnection();
         var ps = conn.prepareStatement("INSERT INTO game_player (game_id, player_id, time_started) VALUES (?, ?, ?)");
 
-        ps.setTimestamp(3, Timestamp.from(Instant.now()));
+        ps.setTimestamp(3, now());
 
-        for(var player : players) {
+        for (var player : players) {
             ps.setInt(1, id);
             ps.setString(2, player.toString());
 
@@ -415,6 +444,8 @@ public class Game {
 
         ps.setInt(1, id);
         ps.setString(2, player.toString());
+
+        ps.executeUpdate();
 
         ps.close();
         conn.close();
@@ -457,7 +488,7 @@ public class Game {
         ps.setString(2, player.toString());
         ps.setBoolean(3, hit);
         ps.setDouble(4, distance);
-        ps.setTimestamp(5, Timestamp.from(Instant.now()));
+        ps.setTimestamp(5, now());
 
         ps.executeUpdate();
 
@@ -472,7 +503,7 @@ public class Game {
         ps.setInt(1, id);
         ps.setString(2, player.toString());
         ps.setString(3, mob.name());
-        ps.setTimestamp(4, Timestamp.from(Instant.now()));
+        ps.setTimestamp(4, now());
 
         ps.executeUpdate();
 
@@ -486,7 +517,7 @@ public class Game {
         var ps = conn.prepareStatement("INSERT INTO damage_taken (game_id, time_taken, damage_cause, damage_taken, damaged_player_id, damaged_player_health, damaged_player_max_health) VALUES (?, ?, ?, ?, ?, ?, ?)");
 
         ps.setInt(1, id);
-        ps.setTimestamp(2, Timestamp.from(Instant.now()));
+        ps.setTimestamp(2, now());
         ps.setString(3, damageCause.name());
         ps.setDouble(4, damageTaken);
         ps.setString(5, damagedPlayer.toString());
@@ -505,8 +536,9 @@ public class Game {
         var ps = conn.prepareStatement("INSERT INTO damage_taken (game_id, time_taken, damage_cause, damage_taken, damaged_player_id, damaged_player_health, damaged_player_max_health, damaging_mob, damaging_mob_health, damaging_mob_max_health) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         ps.setInt(1, id);
-        ps.setTimestamp(2, Timestamp.from(Instant.now()));
+        ps.setTimestamp(2, now());
         ps.setString(3, damageCause.name());
+        ps.setDouble(4, damageTaken);
         ps.setString(5, damagedPlayer.toString());
         ps.setDouble(6, damagedPlayerHealth);
         ps.setDouble(7, damagedPlayerMaxHealth);
@@ -526,7 +558,7 @@ public class Game {
         var ps = conn.prepareStatement("INSERT INTO damage_taken (game_id, time_taken, damage_cause, damage_taken, damaged_player_id, damaged_player_health, damaged_player_max_health, damaging_mob, damaging_mob_health, damaging_mob_max_health, damaging_player_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         ps.setInt(1, id);
-        ps.setTimestamp(2, Timestamp.from(Instant.now()));
+        ps.setTimestamp(2, now());
         ps.setString(3, damageCause.name());
         ps.setDouble(4, damageTaken);
         ps.setString(5, damagedPlayer.toString());
@@ -543,54 +575,56 @@ public class Game {
         conn.close();
     }
 
-    public void playerDamageTaken(EntityDamageEvent e) throws IllegalArgumentException, SQLException {
-        var damagedEntity = e.getEntity();
-        if (!(damagedEntity instanceof Player)) {
-            throw new IllegalArgumentException("The entity must be a player.");
-        }
-        var damagedPlayer = (Player) damagedEntity;
-
-        playerDamageTaken(damagedPlayer.getUniqueId(), e.getCause(), e.getFinalDamage(), damagedPlayer.getHealth(), damagedPlayer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-    }
-
-    public void playerDamageTaken(EntityDamageByEntityEvent e) throws SQLException {
-        var damagedEntity = e.getEntity();
-        if (!(damagedEntity instanceof Player)) {
-            throw new IllegalArgumentException("The entity must be a player.");
-        }
-        var damagedPlayer = (Player) damagedEntity;
-
-        var damagingEntity = e.getEntity();
-        double damagingEntityHealth = 0;
-        double damagingEntityMaxHealth = 0;
-        if (damagingEntity instanceof LivingEntity) {
-            var livingDamagingEntity = (LivingEntity) damagingEntity;
-            damagingEntityHealth = livingDamagingEntity.getHealth();
-            damagingEntityMaxHealth = livingDamagingEntity.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue();
-        }
-
-        UUID damagingPlayerId = null;
-        if (damagingEntity instanceof Player) {
-            var damagingPlayer = (Player) damagingEntity;
-            damagingPlayerId = damagingPlayer.getUniqueId();
-        }
-
-        if (damagingPlayerId == null) {
-            playerDamageTaken(damagedPlayer.getUniqueId(), e.getCause(), e.getFinalDamage(), damagedPlayer.getHealth(), damagedPlayer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue(), damagingEntity.getType(), damagingEntityHealth, damagingEntityMaxHealth);
-        } else {
-            playerDamageTaken(damagedPlayer.getUniqueId(), e.getCause(), e.getFinalDamage(), damagedPlayer.getHealth(), damagedPlayer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue(), damagingPlayerId, damagingEntityHealth, damagingEntityMaxHealth);
-        }
-
-    }
-
-    public void playerConsumeItem(UUID player, String itemMaterial) throws SQLException {
+    public void playerConsumeItem(UUID player, ItemStack item) throws SQLException {
         var conn = Stats.getConnection();
-        var ps = conn.prepareStatement("INSERT INTO item_consume (game_id, player_id, time_consumed, item) VALUES (?, ?, ?, ?)");
+
+        var ps = conn.prepareStatement("INSERT INTO item (type, amount, damage, name, lore) VALUES (?, ?, ?, ?, ?)");
+
+        ps.setString(1, item.getType().name());
+        ps.setInt(2, 1);
+
+        var meta = item.getItemMeta();
+        if (meta instanceof Damageable) {
+            var damageable = (Damageable) meta;
+            if (damageable.hasDamage()) {
+                ps.setInt(3, damageable.getDamage());
+            } else {
+                ps.setNull(3, Types.INTEGER);
+            }
+        } else {
+            ps.setNull(3, Types.INTEGER);
+        }
+
+        if (meta.hasDisplayName()) {
+            ps.setString(4, meta.getDisplayName());
+        } else {
+            ps.setNull(4, Types.VARCHAR);
+        }
+
+        if (meta.hasLore()) {
+            ps.setString(5, String.join("\n", meta.getLore()));
+        } else {
+            ps.setNull(5, Types.VARCHAR);
+        }
+
+        ps.executeUpdate();
+        ps.close();
+
+        ps = conn.prepareStatement("SELECT LAST_INSERT_ID()");
+        var rs = ps.executeQuery();
+
+        rs.first();
+        var itemId = rs.getInt(1);
+
+        rs.close();
+        ps.close();
+
+        ps = conn.prepareStatement("INSERT INTO item_consume (game_id, player_id, time_consumed, item_id) VALUES (?, ?, ?, ?)");
 
         ps.setInt(1, id);
         ps.setString(2, player.toString());
         ps.setTimestamp(3, now());
-        ps.setString(4, itemMaterial);
+        ps.setInt(4, itemId);
 
         ps.executeUpdate();
 
@@ -598,11 +632,21 @@ public class Game {
         conn.close();
     }
 
-    public void playerConsumeItem(UUID player, Material item) throws SQLException {
-        playerConsumeItem(player, item.name());
+    public void playerCraftedItem(Connection conn, UUID player, ItemStack item) throws SQLException {
+        var itemId = saveItem(conn, item);
+        var ps = conn.prepareStatement("INSERT INTO craft_item (game_id, player_id, time_crafted, item_id) VALUES (?, ?, ?, ?)");
+        ps.setInt(1, id);
+        ps.setString(2, player.toString());
+        ps.setTimestamp(3, now());
+        ps.setInt(4, itemId);
+        ps.executeUpdate();
+        ps.close();
     }
 
-    public void playerConsumeItem(PlayerItemConsumeEvent e) throws SQLException {
-        playerConsumeItem(e.getPlayer().getUniqueId(), e.getItem().getType());
+    public void playerCraftedItem(UUID player, ItemStack item) throws SQLException {
+        var conn = Stats.getConnection();
+        playerCraftedItem(conn, player, item);
+        conn.close();
     }
+
 }
